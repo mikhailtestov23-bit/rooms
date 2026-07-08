@@ -134,8 +134,8 @@ const PHOTO_GATE_HEIGHT = 4.35;
 const THIRD_ROOM_DOOR_Z = THIRD_TO_FOURTH_BOUNDARY_Z + 0.78;
 const THIRD_ROOM_DOOR_WIDTH = DOOR_HALF_WIDTH * 2.05;
 const THIRD_ROOM_DOOR_HEIGHT = 4.25;
-const THIRD_ROOM_TILE_SIZE = 2.05;
-const THIRD_ROOM_TILE_TRIGGER_RADIUS = 1.2;
+const THIRD_ROOM_TILE_SIZE = 3.9;
+const THIRD_ROOM_TILE_TRIGGER_RADIUS = 2.1;
 const FOURTH_ROOM_DOOR_Z = FOURTH_TO_FIFTH_BOUNDARY_Z + 0.78;
 const FOURTH_ROOM_DOOR_WIDTH = DOOR_HALF_WIDTH * 2.18;
 const FOURTH_ROOM_DOOR_HEIGHT = 4.42;
@@ -320,14 +320,14 @@ const FINALE_BIRTHDAY_MELODY = [
   { time: 18.28, frequency: 523.25, duration: 1.45, volume: 0.1 },
 ];
 const THIRD_ROOM_TILE_LAYOUT = [
-  { x: -5.7, z: 6.9 },
-  { x: 4.9, z: 1.9 },
-  { x: -1.1, z: -7.1 },
-  { x: 5.7, z: 7.2 },
-  { x: -6.1, z: -1.8 },
-  { x: 2.3, z: -4.7 },
-  { x: -0.7, z: 3.4 },
-  { x: 6.0, z: -8.2 },
+  { x: -5.8, z: 7.1 },
+  { x: 0.3, z: 4.8 },
+  { x: 5.9, z: 7.0 },
+  { x: -5.9, z: 0.7 },
+  { x: 0.1, z: -1.5 },
+  { x: 5.8, z: 0.8 },
+  { x: -5.4, z: -7.0 },
+  { x: 4.5, z: -7.1 },
 ];
 
 const app = document.querySelector("#app");
@@ -480,6 +480,8 @@ const sixthRoomFinale = {
   confettiTimer: 0,
   title: null,
   titleMaterial: null,
+  sea: null,
+  seagulls: [],
   bouquets: [],
   confetti: [],
 };
@@ -2112,9 +2114,10 @@ function addSixthRoomCaveArch(room, rockMaterial) {
 }
 
 function addSixthRoomSunsetBackdrop(room) {
+  const sunsetSeaMaterial = createSunsetSeaMaterial();
   const backdrop = new THREE.Mesh(
     new THREE.PlaneGeometry(30, 12),
-    createSunsetSeaMaterial(),
+    sunsetSeaMaterial,
   );
   backdrop.position.set(0, 3.05, -ROOM_LENGTH / 2 - 1.65);
   backdrop.renderOrder = -1;
@@ -2146,13 +2149,42 @@ function addSixthRoomSunsetBackdrop(room) {
   );
   sun.position.set(4.15, 3.66, -ROOM_LENGTH / 2 - 1.56);
   room.add(sun);
+
+  addSixthRoomSeagulls(room);
 }
 
 function createSunsetSeaMaterial() {
   const canvas = document.createElement("canvas");
-  canvas.width = 1024;
-  canvas.height = 512;
+  canvas.width = PERFORMANCE_MODE ? 512 : 1024;
+  canvas.height = PERFORMANCE_MODE ? 256 : 512;
   const ctx = canvas.getContext("2d");
+  drawSunsetSeaTexture(ctx, canvas, 0);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = PERFORMANCE_MODE ? 1 : 4;
+  const material = new THREE.MeshBasicMaterial({
+    map: texture,
+    side: THREE.FrontSide,
+    toneMapped: false,
+  });
+
+  sixthRoomFinale.sea = {
+    canvas,
+    ctx,
+    texture,
+    nextUpdateAt: 0,
+  };
+
+  return material;
+}
+
+function drawSunsetSeaTexture(ctx, canvas, phase) {
+  const width = canvas.width;
+  const height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+  ctx.save();
+  ctx.scale(width / 1024, height / 512);
 
   const sky = ctx.createLinearGradient(0, 0, 0, 330);
   sky.addColorStop(0, "#48386e");
@@ -2176,16 +2208,33 @@ function createSunsetSeaMaterial() {
 
   ctx.strokeStyle = "rgba(255, 229, 170, 0.38)";
   ctx.lineWidth = 4;
+  let lineIndex = 0;
   for (let y = 300; y < 492; y += 24) {
+    const drift = ((phase * (lineIndex % 2 === 0 ? 18 : -13)) % 44);
     ctx.beginPath();
-    for (let x = 0; x <= 1024; x += 22) {
-      const wave = y + Math.sin(x * 0.035 + y * 0.07) * 5;
-      if (x === 0) {
-        ctx.moveTo(x, wave);
+    for (let x = -44; x <= 1068; x += 22) {
+      const drawX = x + drift;
+      const wave = y
+        + Math.sin(x * 0.035 + y * 0.07 + phase * 1.15 + lineIndex * 0.24) * 5
+        + Math.sin(x * 0.012 - phase * 0.75) * 1.8;
+      if (x === -44) {
+        ctx.moveTo(drawX, wave);
       } else {
-        ctx.lineTo(x, wave);
+        ctx.lineTo(drawX, wave);
       }
     }
+    ctx.stroke();
+    lineIndex += 1;
+  }
+
+  ctx.strokeStyle = "rgba(255, 243, 196, 0.18)";
+  ctx.lineWidth = 3;
+  for (let i = 0; i < 9; i += 1) {
+    const x = ((i * 131 + phase * 34) % 1130) - 70;
+    const y = 316 + (i % 5) * 34 + Math.sin(phase * 0.8 + i) * 5;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.quadraticCurveTo(x + 34, y + Math.sin(phase + i) * 6, x + 88, y);
     ctx.stroke();
   }
 
@@ -2199,14 +2248,69 @@ function createSunsetSeaMaterial() {
   ctx.closePath();
   ctx.fill();
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = PERFORMANCE_MODE ? 1 : 4;
-  return new THREE.MeshBasicMaterial({
-    map: texture,
-    side: THREE.FrontSide,
+  ctx.restore();
+}
+
+function addSixthRoomSeagulls(room) {
+  const birdConfigs = [
+    { x: -5.15, y: 2.86, scale: 1.86, phase: 0.2, speed: 0.42, radiusX: 0.82, radiusY: 0.14 },
+    { x: -0.25, y: 3.06, scale: 1.48, phase: 2.3, speed: 0.34, radiusX: 1.05, radiusY: 0.13 },
+    { x: 4.6, y: 2.92, scale: 1.68, phase: 4.1, speed: 0.38, radiusX: 0.9, radiusY: 0.16 },
+  ];
+
+  sixthRoomFinale.seagulls.length = 0;
+  birdConfigs.forEach((config, index) => {
+    const bird = createSixthRoomSeagull(index, config);
+    bird.group.position.set(config.x, config.y, -ROOM_LENGTH / 2 - 1.04);
+    bird.group.scale.setScalar(config.scale);
+    bird.group.renderOrder = 4;
+    room.add(bird.group);
+    sixthRoomFinale.seagulls.push(bird);
+  });
+}
+
+function createSixthRoomSeagull(index, config) {
+  const group = new THREE.Group();
+  const material = new THREE.MeshBasicMaterial({
+    color: 0xfff7e6,
+    transparent: true,
+    opacity: 0.94,
+    side: THREE.DoubleSide,
+    depthWrite: false,
     toneMapped: false,
   });
+
+  const leftWing = new THREE.Mesh(createSeagullWingGeometry(-1), material);
+  const rightWing = new THREE.Mesh(createSeagullWingGeometry(1), material);
+  group.add(leftWing, rightWing);
+
+  const body = new THREE.Mesh(
+    new THREE.SphereGeometry(0.038, 8, 5),
+    material,
+  );
+  body.scale.set(1.2, 0.52, 0.42);
+  group.add(body);
+
+  return {
+    group,
+    leftWing,
+    rightWing,
+    baseX: config.x,
+    baseY: config.y,
+    baseScale: config.scale,
+    phase: config.phase + index * 0.31,
+    speed: config.speed,
+    radiusX: config.radiusX,
+    radiusY: config.radiusY,
+  };
+}
+
+function createSeagullWingGeometry(direction) {
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0);
+  shape.quadraticCurveTo(direction * 0.28, 0.17, direction * 0.58, 0.025);
+  shape.quadraticCurveTo(direction * 0.28, -0.045, 0, 0);
+  return new THREE.ShapeGeometry(shape);
 }
 
 function addSixthRoomPalms(room) {
@@ -7016,6 +7120,8 @@ function updateFifthRoomDoor(delta) {
 }
 
 function updateSixthRoomFinale(delta, elapsed) {
+  updateSixthRoomSeaside(elapsed);
+
   if (!sixthRoomFinale.started && isPlayerInSixthRoom()) {
     startSixthRoomFinale();
   }
@@ -7028,6 +7134,25 @@ function updateSixthRoomFinale(delta, elapsed) {
   updateSixthRoomFinaleTitle(delta, elapsed);
   updateSixthRoomBouquets(delta, elapsed);
   updateSixthRoomConfetti(delta);
+}
+
+function updateSixthRoomSeaside(elapsed) {
+  const sea = sixthRoomFinale.sea;
+  if (sea && elapsed >= sea.nextUpdateAt) {
+    drawSunsetSeaTexture(sea.ctx, sea.canvas, elapsed);
+    sea.texture.needsUpdate = true;
+    sea.nextUpdateAt = elapsed + (PERFORMANCE_MODE ? 0.08 : 0.045);
+  }
+
+  sixthRoomFinale.seagulls.forEach((bird) => {
+    const flight = elapsed * bird.speed + bird.phase;
+    const flap = Math.sin(elapsed * 4.8 + bird.phase) * 0.24;
+    bird.group.position.x = bird.baseX + Math.sin(flight) * bird.radiusX;
+    bird.group.position.y = bird.baseY + Math.cos(flight * 1.4) * bird.radiusY;
+    bird.group.scale.setScalar(bird.baseScale * (1 + Math.sin(flight * 1.8) * 0.04));
+    bird.leftWing.rotation.z = flap;
+    bird.rightWing.rotation.z = -flap;
+  });
 }
 
 function startSixthRoomFinale() {
