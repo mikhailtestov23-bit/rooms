@@ -1,0 +1,17 @@
+{
+  "name": "rooms-third-person-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "model:character": "node scripts/generate-character-model.js",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": {
+    "@pixiv/three-vrm": "^3.5.4",
+    "three": "^0.178.0",
+    "vite": "^7.0.2"
+  }
+}
