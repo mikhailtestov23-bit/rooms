@@ -225,6 +225,42 @@ canvas {
   transform: translate(-50%, -50%);
 }
 
+#actionButton {
+  position: fixed;
+  right: max(30px, env(safe-area-inset-right));
+  bottom: max(38px, env(safe-area-inset-bottom));
+  z-index: 3;
+  display: none;
+  width: 78px;
+  height: 78px;
+  padding: 0;
+  border: 2px solid rgb(255 240 190 / 46%);
+  border-radius: 50%;
+  color: #fff4c9;
+  background:
+    radial-gradient(circle at 35% 28%, rgb(255 225 157 / 82%), rgb(114 62 104 / 82%) 62%),
+    rgb(52 38 69 / 88%);
+  box-shadow:
+    0 12px 26px rgb(0 0 0 / 36%),
+    inset 0 2px 0 rgb(255 255 255 / 20%),
+    0 0 24px rgb(255 191 112 / 15%);
+  font: inherit;
+  font-size: 27px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0;
+  text-shadow: 0 2px 7px rgb(0 0 0 / 42%);
+  touch-action: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#actionButton:active,
+#actionButton.is-pressed {
+  transform: scale(0.92);
+  filter: brightness(1.14);
+}
+
 #startOverlay {
   position: fixed;
   inset: 0;
@@ -285,6 +321,11 @@ canvas {
 @media (pointer: coarse), (max-width: 700px) {
   #moveStick {
     display: block;
+  }
+
+  #actionButton {
+    display: grid;
+    place-items: center;
   }
 
   #hud {

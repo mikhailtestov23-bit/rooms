@@ -1,4 +1,4 @@
-import "./styles.css?v=player-ui-clean-1";
+import "./styles.css?v=graveyard-mobile-1";
 import * as THREE from "three";
 import photoGateImageUrl from "./assets/marfa-beach-goal.jpg";
 import thirdRoomWallImageUrl from "./assets/marfa-sleeping-room.jpg";
@@ -22,7 +22,9 @@ import room2GalleryPhoto10Url from "./assets/room2-gallery/photo-10.jpg";
 import fifthRoomDoorPhoto1Url from "./assets/room5-door/panel-1.jpg";
 import fifthRoomDoorPhoto2Url from "./assets/room5-door/panel-2.jpg";
 
-const ROOM_COUNT = 6;
+const URL_PARAMS = new URLSearchParams(window.location.search);
+const GRAVEYARD_VARIANT = URL_PARAMS.get("variant") === "graveyard";
+const ROOM_COUNT = GRAVEYARD_VARIANT ? 7 : 6;
 const ROOM_WIDTH = 18;
 const ROOM_LENGTH = 24;
 const CORRIDOR_LENGTH = 6.5;
@@ -49,7 +51,6 @@ const CHARACTER_RECORD_KEY = "active";
 const CHARACTER_ROTATION_KEY = "rooms-character-rotation-v4";
 const BIRTHDAY_GALLERY_TITLE = "Marfa's Birthday Gallery";
 const PARTY_LIGHT_COLORS = [0xff4fd8, 0x58e6ff, 0xffdd4d, 0x74ff62, 0xff6b4a, 0xb46cff, 0x48a6ff];
-const URL_PARAMS = new URLSearchParams(window.location.search);
 const DEBUG_UI_ENABLED = URL_PARAMS.has("debug");
 const PERFORMANCE_MODE = URL_PARAMS.get("quality") !== "high";
 const MAX_RENDER_PIXEL_RATIO = PERFORMANCE_MODE ? 1 : 1.6;
@@ -80,7 +81,12 @@ const FOURTH_TO_FIFTH_BOUNDARY_Z = getRoomBackZ(FOURTH_ROOM_INDEX);
 const FIFTH_ROOM_INDEX = 4;
 const FIFTH_ROOM_CENTER_Z = getRoomCenterZ(FIFTH_ROOM_INDEX);
 const FIFTH_TO_SIXTH_BOUNDARY_Z = getRoomBackZ(FIFTH_ROOM_INDEX);
-const SIXTH_ROOM_INDEX = 5;
+const GRAVEYARD_ROOM_INDEX = GRAVEYARD_VARIANT ? 5 : -1;
+const GRAVEYARD_ROOM_CENTER_Z = GRAVEYARD_VARIANT ? getRoomCenterZ(GRAVEYARD_ROOM_INDEX) : 0;
+const GRAVEYARD_TO_FINALE_BOUNDARY_Z = GRAVEYARD_VARIANT
+  ? getRoomBackZ(GRAVEYARD_ROOM_INDEX)
+  : Number.POSITIVE_INFINITY;
+const SIXTH_ROOM_INDEX = GRAVEYARD_VARIANT ? 6 : 5;
 const SIXTH_ROOM_CENTER_Z = getRoomCenterZ(SIXTH_ROOM_INDEX);
 const ROOM_ENTRY_INSTRUCTION_DURATION = 5;
 const ROOM_ENTRY_INSTRUCTION_FADE_DURATION = 1.1;
@@ -102,6 +108,12 @@ const ROOM_ENTRY_INSTRUCTIONS = {
     title: "spread your love",
     hint: "(space bar to water the plant)",
   },
+  ...(GRAVEYARD_VARIANT ? {
+    [GRAVEYARD_ROOM_INDEX]: {
+      title: "Have fun at work",
+      hint: "(space bar to clean the grave)",
+    },
+  } : {}),
 };
 const PHOTO_GATE_IMAGE_URL = photoGateImageUrl;
 const THIRD_ROOM_WALL_IMAGE_URL = thirdRoomWallImageUrl;
@@ -147,6 +159,20 @@ const FIFTH_ROOM_DOOR_WIDTH = DOOR_HALF_WIDTH * 2.14;
 const FIFTH_ROOM_DOOR_HEIGHT = 4.42;
 const FIFTH_ROOM_WATER_RANGE = 2.9;
 const FIFTH_ROOM_WATER_ANIMATION_DURATION = 0.68;
+const GRAVEYARD_WATER_RANGE = 3.15;
+const GRAVEYARD_WATER_ANIMATION_DURATION = 0.78;
+const GRAVEYARD_GRAVE_LAYOUT = [
+  { x: -5.8, z: 7.7, rotation: 0.08, flowerColor: 0xc9a4ff },
+  { x: -1.9, z: 6.1, rotation: -0.06, flowerColor: 0xf4d36f },
+  { x: 4.8, z: 7.2, rotation: 0.05, flowerColor: 0x9fc9ff },
+  { x: 6.1, z: 2.7, rotation: -0.08, flowerColor: 0xf0a0bd },
+  { x: 1.8, z: 1.6, rotation: 0.04, flowerColor: 0xc8e97a },
+  { x: -4.7, z: 2.0, rotation: -0.04, flowerColor: 0xe8b2ff },
+  { x: -6.0, z: -3.4, rotation: 0.06, flowerColor: 0xffc58e },
+  { x: -1.7, z: -5.2, rotation: -0.08, flowerColor: 0x9ee4dc },
+  { x: 4.4, z: -3.3, rotation: 0.07, flowerColor: 0xe9a4d1 },
+  { x: 5.8, z: -8.0, rotation: -0.05, flowerColor: 0xf5e6a1 },
+];
 const FOURTH_ROOM_BUBBLE_LAYOUT = [
   { x: -5.9, z: 8.2, y: 2.25, radius: 1.05 },
   { x: 0.2, z: 8.85, y: 2.72, radius: 1.18 },
@@ -344,6 +370,16 @@ const modelInput = document.querySelector("#modelInput");
 const modelStatus = document.querySelector("#modelStatus");
 const startOverlay = document.querySelector("#startOverlay");
 const startButton = document.querySelector("#startButton");
+const actionButton = document.querySelector("#actionButton");
+
+if (GRAVEYARD_VARIANT && roomJumpTools && !roomJumpTools.querySelector('[data-room-jump="7"]')) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.dataset.roomJump = "7";
+  button.setAttribute("aria-label", "Перейти в комнату 7");
+  button.textContent = "7";
+  roomJumpTools.appendChild(button);
+}
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x11181a);
@@ -474,6 +510,23 @@ const fifthRoomPuzzle = {
   leftDoor: null,
   rightDoor: null,
 };
+const graveyardPuzzle = {
+  graves: [],
+  particles: [],
+  hedgehogs: [],
+  sunLights: [],
+  sunBeams: [],
+  wateringCan: null,
+  wateringTimer: 0,
+  wateringTarget: null,
+  wateredCount: 0,
+  completed: false,
+  opened: false,
+  opening: 0,
+  lightingProgress: 0,
+  leftGate: null,
+  rightGate: null,
+};
 const sixthRoomFinale = {
   started: false,
   timer: 0,
@@ -493,6 +546,9 @@ buildSecondRoomPuzzle();
 buildThirdRoomPuzzle();
 buildFourthRoomPuzzle();
 buildFifthRoomPuzzle();
+if (GRAVEYARD_VARIANT) {
+  buildGraveyardPuzzle();
+}
 buildSixthRoomFinale();
 const portalGlow = createPortalGlow();
 scene.add(portalGlow);
@@ -508,6 +564,10 @@ moveStick.addEventListener("pointerdown", onStickPointerDown);
 moveStick.addEventListener("pointermove", onStickPointerMove);
 moveStick.addEventListener("pointerup", resetStick);
 moveStick.addEventListener("pointercancel", resetStick);
+actionButton?.addEventListener("pointerdown", onActionButtonPointerDown);
+actionButton?.addEventListener("pointerup", onActionButtonPointerUp);
+actionButton?.addEventListener("pointercancel", onActionButtonPointerUp);
+actionButton?.addEventListener("pointerleave", onActionButtonPointerUp);
 modelButton.addEventListener("click", () => modelInput.click());
 modelInput.addEventListener("change", onModelInputChange);
 rotateModelButton.addEventListener("click", rotateDetailedCharacter);
@@ -539,6 +599,10 @@ if (import.meta.env.DEV || URL_PARAMS.has("debug")) {
 
   if (URL_PARAMS.has("completePlants")) {
     window.setTimeout(completeFifthRoomPlants, 600);
+  }
+
+  if (URL_PARAMS.has("completeGraves") && GRAVEYARD_VARIANT) {
+    window.setTimeout(completeGraveyardPuzzle, 600);
   }
 
   const autoWalkSeconds = Number(new URLSearchParams(window.location.search).get("autowalk"));
@@ -600,6 +664,16 @@ if (import.meta.env.DEV || URL_PARAMS.has("debug")) {
         opening: +fifthRoomPuzzle.opening.toFixed(2),
       };
     },
+    getGraveyardPuzzleState() {
+      return {
+        enabled: GRAVEYARD_VARIANT,
+        gravesLeft: graveyardPuzzle.graves.filter((grave) => !grave.watered).length,
+        wateredCount: graveyardPuzzle.wateredCount,
+        completed: graveyardPuzzle.completed,
+        opened: graveyardPuzzle.opened,
+        opening: +graveyardPuzzle.opening.toFixed(2),
+      };
+    },
     kickFootball,
     openPhotoGate: openSecondRoomPhotoGate,
     openMelodyDoor: completeThirdRoomMelody,
@@ -607,6 +681,8 @@ if (import.meta.env.DEV || URL_PARAMS.has("debug")) {
     completeBubbles: completeFourthRoomBubbles,
     waterPlant: waterFifthRoomPlant,
     completePlants: completeFifthRoomPlants,
+    waterGrave: waterGraveyardGrave,
+    completeGraves: completeGraveyardPuzzle,
     getCharacterState() {
       const state = player.userData.detailedCharacter;
       return {
@@ -733,6 +809,7 @@ function buildRooms() {
   const thirdRoomFloorMaterial = createThirdRoomFloorMaterial();
   const fourthRoomFloorMaterial = createDollhouseFloorMaterial();
   const fifthRoomFloorMaterial = createJungleFloorMaterial();
+  const graveyardFloorMaterial = createGraveyardFloorMaterial();
   const sixthRoomFloorMaterial = createBeachFloorMaterial();
   const corridorMaterials = createCorridorMaterials();
 
@@ -745,6 +822,7 @@ function buildRooms() {
     const isThirdRoom = i === THIRD_ROOM_INDEX;
     const isFourthRoom = i === FOURTH_ROOM_INDEX;
     const isFifthRoom = i === FIFTH_ROOM_INDEX;
+    const isGraveyardRoom = GRAVEYARD_VARIANT && i === GRAVEYARD_ROOM_INDEX;
     const isSixthRoom = i === SIXTH_ROOM_INDEX;
 
     const floor = new THREE.Mesh(
@@ -755,11 +833,13 @@ function buildRooms() {
           ? secondRoomFloorMaterial
           : (isThirdRoom
             ? thirdRoomFloorMaterial
-            : (isFourthRoom
-              ? fourthRoomFloorMaterial
-              : (isFifthRoom
-                ? fifthRoomFloorMaterial
-                : (isSixthRoom ? sixthRoomFloorMaterial : floorMaterials[i % floorMaterials.length]))))),
+              : (isFourthRoom
+                ? fourthRoomFloorMaterial
+                : (isFifthRoom
+                  ? fifthRoomFloorMaterial
+                  : (isGraveyardRoom
+                    ? graveyardFloorMaterial
+                    : (isSixthRoom ? sixthRoomFloorMaterial : floorMaterials[i % floorMaterials.length])))))),
     );
     floor.position.y = -0.18;
     floor.receiveShadow = true;
@@ -785,6 +865,8 @@ function buildRooms() {
         addFourthRoomDollhouseDecor(room);
       } else if (isFifthRoom) {
         addFifthRoomJungleDecor(room);
+      } else if (isGraveyardRoom) {
+        addGraveyardRoomDecor(room);
       } else {
         if (i === SECOND_ROOM_INDEX) {
           addSecondRoomBirthdayDecor(room);
@@ -800,6 +882,8 @@ function buildRooms() {
         addFourthRoomDollhouseLighting(z);
       } else if (isFifthRoom) {
         addFifthRoomJungleLighting(z);
+      } else if (isGraveyardRoom) {
+        addGraveyardRoomLighting(z);
       } else {
         const light = new THREE.PointLight(
           i % 2 === 0 ? 0x83ffd7 : 0xffd38a,
@@ -2036,6 +2120,491 @@ function addFifthRoomJungleLighting(centerZ) {
   gold.userData.flicker = 0.26;
   roomLights.push(gold);
   scene.add(gold);
+}
+
+function addGraveyardRoomDecor(room) {
+  addGraveyardStoneWalls(room);
+  addGraveyardIvyCarpet(room);
+  addGraveyardWallOvergrowth(room);
+  addGraveyardIronFence(room);
+  addGraveyardDeadTrees(room);
+  addGraveyardBushes(room);
+  addGraveyardCandles(room);
+  addGraveyardMist(room);
+  addGraveyardSunBeams(room);
+}
+
+function addGraveyardIvyCarpet(room) {
+  const ivyColors = [0x294a31, 0x365a39, 0x426744, 0x203d2b];
+  const leafMaterials = ivyColors.map((color) => new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.96,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+  }));
+  const clumpMaterials = ivyColors.map((color) => new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.94,
+    metalness: 0,
+  }));
+  const leafTransforms = ivyColors.map(() => []);
+  const clumpTransforms = ivyColors.map(() => []);
+  const sideSpacingZ = PERFORMANCE_MODE ? 0.58 : 0.46;
+  const verticalSpacing = PERFORMANCE_MODE ? 0.55 : 0.44;
+  let sequence = 0;
+
+  const addIvyPatch = (position, rotationY, wallNormal, sizeBias = 1) => {
+    const materialIndex = sequence % ivyColors.length;
+    const leafScale = THREE.MathUtils.randFloat(1.02, 1.72) * sizeBias;
+    leafTransforms[materialIndex].push({
+      position,
+      rotation: new THREE.Euler(
+        THREE.MathUtils.randFloat(-0.18, 0.18),
+        rotationY,
+        THREE.MathUtils.randFloat(0, Math.PI),
+      ),
+      scale: new THREE.Vector3(leafScale * 1.35, leafScale * 0.72, 1),
+    });
+
+    if (sequence % 4 !== 0) {
+      const clumpScale = THREE.MathUtils.randFloat(0.52, 0.98) * sizeBias;
+      clumpTransforms[(materialIndex + 1) % ivyColors.length].push({
+        position: position.clone().addScaledVector(wallNormal, 0.13),
+        rotation: new THREE.Euler(
+          THREE.MathUtils.randFloat(0, Math.PI),
+          THREE.MathUtils.randFloat(0, Math.PI),
+          THREE.MathUtils.randFloat(0, Math.PI),
+        ),
+        scale: new THREE.Vector3(clumpScale * 1.25, clumpScale * 0.76, clumpScale * 0.52),
+      });
+    }
+    sequence += 1;
+  };
+
+  for (const side of [-1, 1]) {
+    const wallX = side * (ROOM_WIDTH / 2 - 0.19);
+    const normal = new THREE.Vector3(-side, 0, 0);
+    for (let y = 0.5; y < WALL_HEIGHT - 0.22; y += verticalSpacing) {
+      for (let z = -ROOM_LENGTH / 2 + 0.45; z < ROOM_LENGTH / 2 - 0.35; z += sideSpacingZ) {
+        const waveGap = Math.sin(z * 0.82 + y * 1.6 + side) > 0.82;
+        if (waveGap && sequence % 7 === 0) {
+          sequence += 1;
+          continue;
+        }
+        addIvyPatch(
+          new THREE.Vector3(
+            wallX,
+            y + THREE.MathUtils.randFloatSpread(verticalSpacing * 0.38),
+            z + THREE.MathUtils.randFloatSpread(sideSpacingZ * 0.38),
+          ),
+          side * Math.PI / 2,
+          normal,
+          0.82 + Math.sin(y * 1.1 + z * 0.22) * 0.12,
+        );
+      }
+    }
+  }
+
+  const endSpacingX = PERFORMANCE_MODE ? 0.56 : 0.45;
+  for (const side of [-1, 1]) {
+    const wallZ = side * (ROOM_LENGTH / 2 - 0.19);
+    const normal = new THREE.Vector3(0, 0, -side);
+    for (let y = 0.5; y < WALL_HEIGHT - 0.22; y += verticalSpacing) {
+      for (let x = -ROOM_WIDTH / 2 + 0.45; x < ROOM_WIDTH / 2 - 0.35; x += endSpacingX) {
+        const insideDoorway = Math.abs(x) < DOOR_HALF_WIDTH + 0.5 && y < 4.55;
+        if (insideDoorway) {
+          continue;
+        }
+        if (Math.sin(x * 0.95 - y * 1.35 + side) > 0.92 && sequence % 7 === 0) {
+          sequence += 1;
+          continue;
+        }
+        addIvyPatch(
+          new THREE.Vector3(
+            x + THREE.MathUtils.randFloatSpread(endSpacingX * 0.36),
+            y + THREE.MathUtils.randFloatSpread(verticalSpacing * 0.36),
+            wallZ,
+          ),
+          side < 0 ? 0 : Math.PI,
+          normal,
+          0.84 + Math.cos(x * 0.4 + y) * 0.13,
+        );
+      }
+    }
+  }
+
+  const leafGeometry = new THREE.CircleGeometry(0.24, 9);
+  const clumpGeometry = new THREE.DodecahedronGeometry(0.32, 0);
+  const helper = new THREE.Object3D();
+  const addInstances = (transformsByMaterial, geometry, materials) => {
+    transformsByMaterial.forEach((transforms, materialIndex) => {
+      const instances = new THREE.InstancedMesh(geometry, materials[materialIndex], transforms.length);
+      transforms.forEach((transform, index) => {
+        helper.position.copy(transform.position);
+        helper.rotation.copy(transform.rotation);
+        helper.scale.copy(transform.scale);
+        helper.updateMatrix();
+        instances.setMatrixAt(index, helper.matrix);
+      });
+      instances.instanceMatrix.needsUpdate = true;
+      room.add(instances);
+    });
+  };
+  addInstances(leafTransforms, leafGeometry, leafMaterials);
+  addInstances(clumpTransforms, clumpGeometry, clumpMaterials);
+}
+
+function addGraveyardStoneWalls(room) {
+  const stoneMaterial = new THREE.MeshStandardMaterial({
+    color: 0x24272a,
+    roughness: 0.96,
+    metalness: 0.02,
+  });
+  const blockGeometry = new THREE.BoxGeometry(1.75, 0.72, 0.18);
+
+  for (const side of [-1, 1]) {
+    const x = side * (ROOM_WIDTH / 2 - 0.06);
+    for (let row = 0; row < 7; row += 1) {
+      for (let column = 0; column < 13; column += 1) {
+        const block = new THREE.Mesh(blockGeometry, stoneMaterial);
+        block.position.set(
+          x,
+          0.38 + row * 0.75,
+          -ROOM_LENGTH / 2 + 0.92 + column * 1.82 + (row % 2) * 0.28,
+        );
+        block.rotation.y = Math.PI / 2;
+        block.scale.z = 0.75 + ((row + column) % 3) * 0.1;
+        markCameraFadeMesh(block, 0.07);
+        room.add(block);
+      }
+    }
+  }
+
+  const archMaterial = new THREE.MeshStandardMaterial({
+    color: 0x35383b,
+    roughness: 0.9,
+    metalness: 0.04,
+  });
+  for (const z of [-ROOM_LENGTH / 2 + 0.08, ROOM_LENGTH / 2 - 0.08]) {
+    const arch = new THREE.Mesh(
+      new THREE.TorusGeometry(DOOR_HALF_WIDTH + 0.38, 0.28, 8, PERFORMANCE_MODE ? 24 : 40, Math.PI),
+      archMaterial,
+    );
+    arch.position.set(0, 4.36, z);
+    arch.rotation.set(0, z < 0 ? 0 : Math.PI, 0);
+    markCameraFadeMesh(arch, 0.08);
+    room.add(arch);
+  }
+}
+
+function addGraveyardWallOvergrowth(room) {
+  const vineMaterial = new THREE.MeshStandardMaterial({
+    color: 0x263e2b,
+    roughness: 0.96,
+    metalness: 0,
+  });
+  const dryBranchMaterial = new THREE.MeshStandardMaterial({
+    color: 0x3b2b25,
+    roughness: 1,
+  });
+  const leafMaterials = [0x35573b, 0x466447, 0x283f31].map((color) => new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.9,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+  }));
+  const leafTransforms = leafMaterials.map(() => []);
+  const vineCount = PERFORMANCE_MODE ? 44 : 72;
+
+  for (let i = 0; i < vineCount; i += 1) {
+    const onSideWall = i % 3 !== 0;
+    const wallSign = i % 2 === 0 ? -1 : 1;
+    const start = onSideWall
+      ? new THREE.Vector3(
+        wallSign * (ROOM_WIDTH / 2 - 0.22),
+        WALL_HEIGHT - THREE.MathUtils.randFloat(0.1, 0.75),
+        THREE.MathUtils.randFloat(-ROOM_LENGTH / 2 + 0.7, ROOM_LENGTH / 2 - 0.7),
+      )
+      : new THREE.Vector3(
+        THREE.MathUtils.randFloat(-ROOM_WIDTH / 2 + 0.7, ROOM_WIDTH / 2 - 0.7),
+        WALL_HEIGHT - THREE.MathUtils.randFloat(0.1, 0.7),
+        wallSign * (ROOM_LENGTH / 2 - 0.2),
+      );
+    const fall = THREE.MathUtils.randFloat(1.35, 4.5);
+    const inward = onSideWall
+      ? new THREE.Vector3(-wallSign * THREE.MathUtils.randFloat(0.05, 0.28), -fall * 0.48, THREE.MathUtils.randFloatSpread(0.5))
+      : new THREE.Vector3(THREE.MathUtils.randFloatSpread(0.5), -fall * 0.48, -wallSign * THREE.MathUtils.randFloat(0.05, 0.28));
+    const end = start.clone().add(inward.clone().multiplyScalar(2));
+    const points = [start, start.clone().add(inward), end];
+    const curve = new THREE.CatmullRomCurve3(points);
+    const vine = new THREE.Mesh(
+      new THREE.TubeGeometry(curve, PERFORMANCE_MODE ? 5 : 8, 0.026, 5, false),
+      vineMaterial,
+    );
+    room.add(vine);
+
+    for (let leafIndex = 0; leafIndex < 7; leafIndex += 1) {
+      const t = 0.1 + leafIndex * 0.135;
+      const radius = 0.17 + (leafIndex % 3) * 0.045;
+      leafTransforms[(i + leafIndex) % leafMaterials.length].push({
+        position: curve.getPoint(t),
+        rotation: new THREE.Euler(
+          THREE.MathUtils.randFloat(-0.4, 0.4),
+          onSideWall ? Math.PI / 2 : 0,
+          THREE.MathUtils.randFloat(0, Math.PI),
+        ),
+        scale: new THREE.Vector3(radius / 0.2 * 1.3, radius / 0.2 * 0.58, 1),
+      });
+    }
+  }
+
+  const leafGeometry = new THREE.CircleGeometry(0.2, 8);
+  const transformHelper = new THREE.Object3D();
+  leafTransforms.forEach((transforms, materialIndex) => {
+    const leaves = new THREE.InstancedMesh(leafGeometry, leafMaterials[materialIndex], transforms.length);
+    transforms.forEach((transform, index) => {
+      transformHelper.position.copy(transform.position);
+      transformHelper.rotation.copy(transform.rotation);
+      transformHelper.scale.copy(transform.scale);
+      transformHelper.updateMatrix();
+      leaves.setMatrixAt(index, transformHelper.matrix);
+    });
+    leaves.instanceMatrix.needsUpdate = true;
+    room.add(leaves);
+  });
+
+  const branchCount = PERFORMANCE_MODE ? 32 : 48;
+  for (let i = 0; i < branchCount; i += 1) {
+    const onSideWall = i % 2 === 0;
+    const wallSign = i % 4 < 2 ? -1 : 1;
+    const length = THREE.MathUtils.randFloat(1.1, 2.75);
+    const branch = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.075, length, 6), dryBranchMaterial);
+    if (onSideWall) {
+      branch.position.set(
+        wallSign * (ROOM_WIDTH / 2 - 0.2),
+        THREE.MathUtils.randFloat(1.1, WALL_HEIGHT - 0.55),
+        THREE.MathUtils.randFloat(-ROOM_LENGTH / 2 + 0.8, ROOM_LENGTH / 2 - 0.8),
+      );
+      branch.rotation.set(THREE.MathUtils.randFloat(-0.8, 0.8), 0, THREE.MathUtils.randFloat(-1.25, 1.25));
+    } else {
+      branch.position.set(
+        THREE.MathUtils.randFloat(-ROOM_WIDTH / 2 + 0.8, ROOM_WIDTH / 2 - 0.8),
+        THREE.MathUtils.randFloat(1.1, WALL_HEIGHT - 0.55),
+        wallSign * (ROOM_LENGTH / 2 - 0.2),
+      );
+      branch.rotation.set(THREE.MathUtils.randFloat(-1.2, 1.2), THREE.MathUtils.randFloat(-0.5, 0.5), Math.PI / 2);
+    }
+    room.add(branch);
+  }
+}
+
+function addGraveyardIronFence(room) {
+  const ironMaterial = new THREE.MeshStandardMaterial({
+    color: 0x111518,
+    roughness: 0.46,
+    metalness: 0.72,
+  });
+  const postGeometry = new THREE.CylinderGeometry(0.035, 0.045, 1.65, 6);
+  const spikeGeometry = new THREE.ConeGeometry(0.09, 0.28, 6);
+  const railGeometry = new THREE.BoxGeometry(0.055, 0.055, ROOM_LENGTH - 1.8);
+
+  for (const side of [-1, 1]) {
+    const x = side * (ROOM_WIDTH / 2 - 0.54);
+    for (let i = 0; i < 19; i += 1) {
+      const z = -ROOM_LENGTH / 2 + 1.05 + i * ((ROOM_LENGTH - 2.1) / 18);
+      const post = new THREE.Mesh(postGeometry, ironMaterial);
+      post.position.set(x, 1.02, z);
+      room.add(post);
+      const spike = new THREE.Mesh(spikeGeometry, ironMaterial);
+      spike.position.set(x, 1.98, z);
+      room.add(spike);
+    }
+    for (const y of [0.72, 1.48]) {
+      const rail = new THREE.Mesh(railGeometry, ironMaterial);
+      rail.position.set(x, y, 0);
+      room.add(rail);
+    }
+  }
+}
+
+function addGraveyardDeadTrees(room) {
+  const barkMaterial = new THREE.MeshStandardMaterial({
+    color: 0x2e2522,
+    roughness: 0.98,
+  });
+  const placements = [
+    { x: -7.5, z: 7.9, scale: 1.05, rotation: 0.2 },
+    { x: 7.3, z: 5.4, scale: 0.86, rotation: -0.35 },
+    { x: -7.35, z: -7.3, scale: 0.78, rotation: 0.5 },
+  ];
+
+  placements.forEach((placement, index) => {
+    const tree = new THREE.Group();
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.42, 4.15, 7), barkMaterial);
+    trunk.position.y = 2.05;
+    trunk.rotation.z = placement.rotation * 0.12;
+    tree.add(trunk);
+
+    for (let branchIndex = 0; branchIndex < 6; branchIndex += 1) {
+      const length = 1.25 + (branchIndex % 3) * 0.34;
+      const branch = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.13, length, 6), barkMaterial);
+      const angle = (branchIndex / 6) * Math.PI * 2 + index * 0.45;
+      branch.position.set(Math.cos(angle) * 0.42, 3.55 + (branchIndex % 2) * 0.45, Math.sin(angle) * 0.42);
+      branch.rotation.set(Math.sin(angle) * 0.75, angle, Math.cos(angle) * 0.78);
+      tree.add(branch);
+    }
+
+    tree.position.set(placement.x, 0, placement.z);
+    tree.scale.setScalar(placement.scale);
+    tree.rotation.y = placement.rotation;
+    room.add(tree);
+  });
+}
+
+function addGraveyardBushes(room) {
+  const leafMaterials = [0x263b2d, 0x354b34, 0x40543c, 0x293f32].map((color) => new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.94,
+    metalness: 0,
+  }));
+  const placements = [
+    [-7.5, 6.2], [-7.2, 2.5], [-7.4, -2.7], [-7.2, -6.3],
+    [7.4, 7.0], [7.2, 3.7], [7.4, -1.6], [7.1, -6.8],
+    [-3.5, 9.5], [2.8, 9.6], [-4.1, -9.4], [1.0, -9.7],
+  ];
+
+  placements.forEach(([x, z], index) => {
+    const bush = new THREE.Group();
+    const clumpCount = 5 + (index % 4);
+    for (let clumpIndex = 0; clumpIndex < clumpCount; clumpIndex += 1) {
+      const clump = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(0.32 + (clumpIndex % 3) * 0.1, 0),
+        leafMaterials[(index + clumpIndex) % leafMaterials.length],
+      );
+      const angle = (clumpIndex / clumpCount) * Math.PI * 2;
+      clump.position.set(Math.cos(angle) * 0.34, 0.24 + (clumpIndex % 2) * 0.22, Math.sin(angle) * 0.3);
+      clump.scale.set(1.2, 0.9, 1);
+      bush.add(clump);
+    }
+    bush.position.set(x, 0.02, z);
+    bush.rotation.y = index * 0.62;
+    bush.scale.setScalar(0.9 + (index % 3) * 0.12);
+    room.add(bush);
+  });
+}
+
+function addGraveyardCandles(room) {
+  const waxMaterial = new THREE.MeshStandardMaterial({ color: 0xd7d0bd, roughness: 0.8 });
+  const flameMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffb45c,
+    transparent: true,
+    opacity: 0.92,
+    toneMapped: false,
+  });
+  const candlePositions = [
+    [-7.2, 9.8], [7.1, 9.1], [-7.25, 4.7], [7.15, 0.2],
+    [-7.2, -1.1], [7.25, -5.0], [-7.1, -9.1], [7.0, -9.5],
+  ];
+
+  candlePositions.forEach(([x, z], index) => {
+    const candle = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.07, 0.085, 0.38 + (index % 3) * 0.1, 8),
+      waxMaterial,
+    );
+    candle.position.set(x, 0.2, z);
+    room.add(candle);
+    const flame = new THREE.Mesh(new THREE.SphereGeometry(0.055, 7, 5), flameMaterial.clone());
+    flame.scale.set(0.65, 1.7, 0.65);
+    flame.position.set(x, candle.position.y + 0.27, z);
+    room.add(flame);
+  });
+}
+
+function addGraveyardMist(room) {
+  const mistMaterial = new THREE.MeshBasicMaterial({
+    color: 0x9aa7ad,
+    transparent: true,
+    opacity: PERFORMANCE_MODE ? 0.055 : 0.075,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+  });
+  const count = PERFORMANCE_MODE ? 12 : 22;
+  for (let i = 0; i < count; i += 1) {
+    const mist = new THREE.Mesh(new THREE.CircleGeometry(1.2 + (i % 4) * 0.45, 18), mistMaterial.clone());
+    mist.position.set(
+      THREE.MathUtils.randFloatSpread(ROOM_WIDTH - 2),
+      0.16 + (i % 3) * 0.06,
+      THREE.MathUtils.randFloatSpread(ROOM_LENGTH - 2),
+    );
+    mist.rotation.x = -Math.PI / 2;
+    mist.scale.set(1.8, 0.58, 1);
+    room.add(mist);
+  }
+}
+
+function addGraveyardSunBeams(room) {
+  graveyardPuzzle.sunBeams.length = 0;
+  const beamMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffe2a1,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    toneMapped: false,
+  });
+  const placements = [
+    { x: -4.2, z: -1.5, scale: 1.15, rotation: -0.22 },
+    { x: 0.6, z: 2.4, scale: 0.9, rotation: 0.16 },
+    { x: 4.6, z: -4.4, scale: 1.05, rotation: 0.28 },
+  ];
+  placements.forEach((placement, index) => {
+    const beam = new THREE.Mesh(
+      new THREE.ConeGeometry(1.45, WALL_HEIGHT + 0.4, PERFORMANCE_MODE ? 20 : 30, 1, true),
+      beamMaterial.clone(),
+    );
+    beam.position.set(placement.x, WALL_HEIGHT / 2, placement.z);
+    beam.rotation.z = placement.rotation;
+    beam.scale.set(placement.scale, 1, placement.scale);
+    beam.renderOrder = 3;
+    beam.userData.phase = index * 1.8;
+    room.add(beam);
+    graveyardPuzzle.sunBeams.push(beam);
+  });
+}
+
+function addGraveyardRoomLighting(centerZ) {
+  const moon = new THREE.PointLight(0xa9c7e8, PERFORMANCE_MODE ? 2.35 : 4.2, 22, 2);
+  moon.position.set(-3.8, 5.1, centerZ - 2.5);
+  moon.userData.baseIntensity = PERFORMANCE_MODE ? 2.05 : 3.6;
+  moon.userData.flicker = 0.08;
+  roomLights.push(moon);
+  scene.add(moon);
+
+  const candleGlow = new THREE.PointLight(0xffa65c, PERFORMANCE_MODE ? 1.05 : 1.9, 11, 2);
+  candleGlow.position.set(5.9, 1.7, centerZ + 4.4);
+  candleGlow.userData.baseIntensity = PERFORMANCE_MODE ? 0.9 : 1.55;
+  candleGlow.userData.flicker = 0.24;
+  roomLights.push(candleGlow);
+  scene.add(candleGlow);
+
+  graveyardPuzzle.sunLights.length = 0;
+  const sunPlacements = [
+    { x: -4.2, y: 3.9, z: centerZ - 1.5, color: 0xffd17a, intensity: PERFORMANCE_MODE ? 7.2 : 10.5 },
+    { x: 0.6, y: 3.8, z: centerZ + 2.4, color: 0xffefb0, intensity: PERFORMANCE_MODE ? 6.6 : 9.6 },
+    { x: 4.6, y: 3.8, z: centerZ - 4.4, color: 0xffb86b, intensity: PERFORMANCE_MODE ? 5.9 : 8.8 },
+  ];
+  sunPlacements.forEach((placement) => {
+    const light = new THREE.PointLight(placement.color, 0, 24, 1.16);
+    light.position.set(placement.x, placement.y, placement.z);
+    light.userData.targetIntensity = placement.intensity;
+    graveyardPuzzle.sunLights.push(light);
+    scene.add(light);
+  });
 }
 
 function addSixthRoomBeachExit(room, wallMaterial, trimMaterial) {
@@ -4178,6 +4747,66 @@ function createJungleFloorMaterial() {
   });
 }
 
+function createGraveyardFloorMaterial() {
+  const canvas = document.createElement("canvas");
+  const textureSize = PERFORMANCE_MODE ? 256 : 512;
+  canvas.width = textureSize;
+  canvas.height = textureSize;
+  const ctx = canvas.getContext("2d");
+
+  const gradient = ctx.createRadialGradient(
+    textureSize * 0.48,
+    textureSize * 0.45,
+    textureSize * 0.08,
+    textureSize * 0.5,
+    textureSize * 0.5,
+    textureSize * 0.75,
+  );
+  gradient.addColorStop(0, "#354038");
+  gradient.addColorStop(0.45, "#252f2a");
+  gradient.addColorStop(1, "#151b1a");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, textureSize, textureSize);
+
+  const speckCount = PERFORMANCE_MODE ? 1050 : 2800;
+  for (let i = 0; i < speckCount; i += 1) {
+    const green = THREE.MathUtils.randInt(35, 78);
+    ctx.fillStyle = `rgba(${THREE.MathUtils.randInt(25, 55)}, ${green}, ${THREE.MathUtils.randInt(30, 55)}, ${THREE.MathUtils.randFloat(0.12, 0.34)})`;
+    const radius = THREE.MathUtils.randFloat(0.6, 2.4);
+    ctx.beginPath();
+    ctx.arc(Math.random() * textureSize, Math.random() * textureSize, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.strokeStyle = "rgba(122, 139, 126, 0.13)";
+  ctx.lineWidth = 2;
+  for (let y = 20; y < textureSize; y += 46) {
+    ctx.beginPath();
+    for (let x = 0; x <= textureSize; x += 18) {
+      const offset = Math.sin(x * 0.045 + y * 0.02) * 5;
+      if (x === 0) ctx.moveTo(x, y + offset);
+      else ctx.lineTo(x, y + offset);
+    }
+    ctx.stroke();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(ROOM_WIDTH / 5.2, ROOM_LENGTH / 5.8);
+  texture.anisotropy = PERFORMANCE_MODE ? 1 : 4;
+
+  return new THREE.MeshStandardMaterial({
+    map: texture,
+    color: 0x879287,
+    roughness: 0.98,
+    metalness: 0,
+    emissive: 0x0b1210,
+    emissiveIntensity: 0.18,
+  });
+}
+
 function createBeachFloorMaterial() {
   const canvas = document.createElement("canvas");
   const textureSize = PERFORMANCE_MODE ? 256 : 512;
@@ -4491,6 +5120,395 @@ function buildFifthRoomPuzzle() {
   fifthRoomPuzzle.wateringCan = createWateringCanTool();
   fifthRoomPuzzle.wateringCan.visible = false;
   scene.add(fifthRoomPuzzle.wateringCan);
+}
+
+function buildGraveyardPuzzle() {
+  graveyardPuzzle.graves.length = 0;
+  graveyardPuzzle.particles.length = 0;
+  graveyardPuzzle.hedgehogs.length = 0;
+
+  const gate = createGraveyardExitGate();
+  scene.add(gate);
+
+  GRAVEYARD_GRAVE_LAYOUT.forEach((layout, index) => {
+    const grave = createGraveyardGrave(layout, index);
+    grave.group.position.set(layout.x, 0, GRAVEYARD_ROOM_CENTER_Z + layout.z);
+    grave.group.rotation.y = layout.rotation;
+    graveyardPuzzle.graves.push(grave);
+    scene.add(grave.group);
+  });
+
+  const hedgehogRoutes = [
+    { centerX: -3.9, centerZ: 4.2, radiusX: 2.0, radiusZ: 1.45, speed: 0.52 },
+    { centerX: 3.9, centerZ: 3.7, radiusX: 1.75, radiusZ: 1.65, speed: 0.46 },
+    { centerX: -3.6, centerZ: -5.4, radiusX: 2.1, radiusZ: 1.25, speed: 0.58 },
+    { centerX: 3.8, centerZ: -6.5, radiusX: 1.65, radiusZ: 1.5, speed: 0.49 },
+  ];
+  hedgehogRoutes.forEach((route, index) => {
+    const hedgehog = createGraveyardHedgehog(index);
+    hedgehog.route = route;
+    hedgehog.phase = index * 1.63;
+    hedgehog.group.position.set(route.centerX, 0.25, GRAVEYARD_ROOM_CENTER_Z + route.centerZ);
+    graveyardPuzzle.hedgehogs.push(hedgehog);
+    scene.add(hedgehog.group);
+  });
+
+  graveyardPuzzle.wateringCan = createWateringCanTool();
+  graveyardPuzzle.wateringCan.visible = false;
+  scene.add(graveyardPuzzle.wateringCan);
+}
+
+function createGraveyardGrave(layout, index) {
+  const group = new THREE.Group();
+  const stoneMaterials = [0x34443a, 0x2a3931, 0x3b493e].map((color) => new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.96,
+    metalness: 0.02,
+    emissive: 0x090b0d,
+    emissiveIntensity: 0.04,
+  }));
+  const cleanStoneColors = [0xa4aaa8, 0x929a9b, 0xb0aaa2];
+  stoneMaterials.forEach((material, materialIndex) => {
+    material.userData.dirtyColor = material.color.clone();
+    material.userData.cleanColor = new THREE.Color(cleanStoneColors[materialIndex]);
+  });
+  const dirtMaterial = new THREE.MeshStandardMaterial({ color: 0x211d1a, roughness: 1 });
+  const mossMaterial = new THREE.MeshBasicMaterial({
+    color: 0x263d2c,
+    transparent: true,
+    opacity: 0.88,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+  });
+
+  const mound = new THREE.Mesh(new THREE.SphereGeometry(0.82, 14, 7), dirtMaterial);
+  mound.scale.set(1.18, 0.18, 1.72);
+  mound.position.set(0, 0.1, 0.45);
+  group.add(mound);
+
+  const base = new THREE.Mesh(new THREE.BoxGeometry(1.28, 0.22, 0.52), stoneMaterials[0]);
+  base.position.set(0, 0.2, -0.48);
+  base.rotation.y = (index % 3 - 1) * 0.018;
+  group.add(base);
+
+  const bodyWidth = 0.88 + (index % 3) * 0.08;
+  const bodyHeight = 1.18 + (index % 4) * 0.11;
+  const body = new THREE.Mesh(new THREE.BoxGeometry(bodyWidth, bodyHeight, 0.28), stoneMaterials[1]);
+  body.position.set(0, 0.32 + bodyHeight / 2, -0.49);
+  body.rotation.z = (index % 2 === 0 ? 1 : -1) * 0.018;
+  group.add(body);
+
+  const crown = new THREE.Mesh(
+    index % 3 === 0
+      ? new THREE.SphereGeometry(bodyWidth * 0.5, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2)
+      : new THREE.BoxGeometry(bodyWidth * 0.92, 0.22, 0.31),
+    stoneMaterials[2],
+  );
+  crown.position.set(0, 0.32 + bodyHeight, -0.49);
+  if (index % 3 !== 0) {
+    crown.rotation.z = Math.PI / 4;
+    crown.scale.set(0.76, 0.76, 1);
+  }
+  group.add(crown);
+
+  const inscriptionMaterial = new THREE.MeshStandardMaterial({
+    color: 0x1b1d1e,
+    roughness: 0.9,
+  });
+  for (let line = 0; line < 3; line += 1) {
+    const inscription = new THREE.Mesh(
+      new THREE.BoxGeometry(bodyWidth * (0.48 - line * 0.05), 0.026, 0.018),
+      inscriptionMaterial,
+    );
+    inscription.position.set(0, 0.65 + bodyHeight * 0.34 - line * 0.13, -0.333);
+    group.add(inscription);
+  }
+
+  const mossPatches = [];
+  for (let patchIndex = 0; patchIndex < 13; patchIndex += 1) {
+    const patch = new THREE.Mesh(
+      new THREE.CircleGeometry(0.12 + (patchIndex % 4) * 0.045, 10),
+      mossMaterial.clone(),
+    );
+    patch.scale.set(1.25 + (patchIndex % 3) * 0.18, 0.48 + (patchIndex % 4) * 0.11, 1);
+    patch.position.set(
+      THREE.MathUtils.randFloat(-bodyWidth * 0.34, bodyWidth * 0.34),
+      0.43 + (patchIndex % 7) * bodyHeight * 0.125,
+      -0.326,
+    );
+    patch.rotation.z = patchIndex * 0.91;
+    group.add(patch);
+    mossPatches.push(patch);
+  }
+
+  const flowers = createGraveyardFlowerCluster(layout.flowerColor, index);
+  flowers.position.set(0.56 * (index % 2 === 0 ? 1 : -1), 0.12, -0.02);
+  flowers.scale.setScalar(0.01);
+  flowers.visible = false;
+  group.add(flowers);
+
+  return {
+    group,
+    stoneMaterials,
+    mossPatches,
+    flowers,
+    watered: false,
+    cleaning: false,
+    cleanProgress: 0,
+    phase: index * 0.71,
+    flowerColor: layout.flowerColor,
+  };
+}
+
+function createGraveyardFlowerCluster(color, index) {
+  const group = new THREE.Group();
+  const stemMaterial = new THREE.MeshStandardMaterial({ color: 0x3e7a49, roughness: 0.78 });
+  const petalMaterial = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.96,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+  });
+  const centerMaterial = new THREE.MeshBasicMaterial({ color: 0xffdf6d, toneMapped: false });
+  const flowerCount = 5 + (index % 3);
+
+  for (let flowerIndex = 0; flowerIndex < flowerCount; flowerIndex += 1) {
+    const angle = (flowerIndex / flowerCount) * Math.PI * 2 + index * 0.4;
+    const radius = 0.12 + (flowerIndex % 3) * 0.07;
+    const height = 0.48 + (flowerIndex % 4) * 0.12;
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.018, height, 5), stemMaterial);
+    stem.position.set(Math.cos(angle) * radius, height / 2, Math.sin(angle) * radius);
+    stem.rotation.z = Math.cos(angle) * 0.12;
+    group.add(stem);
+
+    const blossom = new THREE.Group();
+    blossom.position.set(Math.cos(angle) * radius * 1.25, height, Math.sin(angle) * radius * 1.25);
+    for (let petalIndex = 0; petalIndex < 5; petalIndex += 1) {
+      const petalAngle = (petalIndex / 5) * Math.PI * 2;
+      const petal = new THREE.Mesh(new THREE.CircleGeometry(0.095, 9), petalMaterial);
+      petal.scale.set(1, 0.58, 1);
+      petal.position.set(Math.cos(petalAngle) * 0.085, Math.sin(petalAngle) * 0.085, 0);
+      petal.rotation.z = petalAngle;
+      blossom.add(petal);
+    }
+    const center = new THREE.Mesh(new THREE.CircleGeometry(0.052, 9), centerMaterial);
+    center.position.z = 0.006;
+    blossom.add(center);
+    blossom.rotation.x = -0.22;
+    blossom.rotation.y = angle;
+    group.add(blossom);
+  }
+
+  return group;
+}
+
+function createGraveyardHedgehog(index) {
+  const group = new THREE.Group();
+  const furMaterial = new THREE.MeshStandardMaterial({ color: 0x76503b, roughness: 0.94 });
+  const faceMaterial = new THREE.MeshStandardMaterial({ color: 0xb9825f, roughness: 0.88 });
+  const spineMaterial = new THREE.MeshStandardMaterial({ color: 0x3d302a, roughness: 0.98 });
+  const spineHighlightMaterial = new THREE.MeshStandardMaterial({ color: 0x574238, roughness: 0.96 });
+  const darkMaterial = new THREE.MeshStandardMaterial({ color: 0x151414, roughness: 0.72 });
+  const eyeShineMaterial = new THREE.MeshBasicMaterial({ color: 0xfff7df, toneMapped: false });
+  const cheekMaterial = new THREE.MeshBasicMaterial({ color: 0xd9877c, transparent: true, opacity: 0.72, toneMapped: false });
+
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.38, PERFORMANCE_MODE ? 10 : 16, 10), furMaterial);
+  body.scale.set(1, 0.72, 1.35);
+  body.position.y = 0.34;
+  group.add(body);
+
+  const face = new THREE.Mesh(new THREE.ConeGeometry(0.29, 0.58, 12), faceMaterial);
+  face.rotation.x = Math.PI / 2;
+  face.position.set(0, 0.31, 0.52);
+  group.add(face);
+
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.065, 9, 7), darkMaterial);
+  nose.position.set(0, 0.31, 0.83);
+  group.add(nose);
+  for (const side of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.046, 9, 7), darkMaterial);
+    eye.position.set(side * 0.13, 0.42, 0.59);
+    group.add(eye);
+    const eyeShine = new THREE.Mesh(new THREE.SphereGeometry(0.012, 6, 5), eyeShineMaterial);
+    eyeShine.position.set(side * 0.143, 0.435, 0.626);
+    group.add(eyeShine);
+    const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.052, 8, 6), cheekMaterial);
+    cheek.scale.set(1, 0.52, 0.28);
+    cheek.position.set(side * 0.205, 0.34, 0.575);
+    group.add(cheek);
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), faceMaterial);
+    ear.scale.set(0.75, 1, 0.45);
+    ear.position.set(side * 0.25, 0.54, 0.34);
+    group.add(ear);
+  }
+
+  const spineGeometry = new THREE.ConeGeometry(0.042, 0.29, 5);
+  const spineRows = PERFORMANCE_MODE ? 6 : 8;
+  const spineColumns = PERFORMANCE_MODE ? 12 : 15;
+  const spineTransforms = [[], []];
+  const up = new THREE.Vector3(0, 1, 0);
+  for (let row = 0; row < spineRows; row += 1) {
+    const rowProgress = row / (spineRows - 1);
+    const z = THREE.MathUtils.lerp(-0.48, 0.22, rowProgress);
+    const crossSection = 0.78 + Math.sin(rowProgress * Math.PI) * 0.22;
+    for (let column = 0; column < spineColumns; column += 1) {
+      const columnProgress = column / (spineColumns - 1);
+      const angle = THREE.MathUtils.lerp(Math.PI * 0.04, Math.PI * 0.96, columnProgress);
+      const radialX = Math.cos(angle);
+      const radialY = Math.sin(angle);
+      const position = new THREE.Vector3(
+        radialX * 0.37 * crossSection,
+        0.34 + radialY * 0.3 * crossSection,
+        z,
+      );
+      const normal = new THREE.Vector3(
+        radialX,
+        radialY * 1.22,
+        THREE.MathUtils.lerp(-0.34, 0.16, rowProgress),
+      ).normalize();
+      const lengthScale = 0.82 + ((row * 5 + column * 3) % 7) * 0.055;
+      spineTransforms[(row + column) % 2].push({ position, normal, lengthScale });
+    }
+  }
+
+  const spineHelper = new THREE.Object3D();
+  spineTransforms.forEach((transforms, materialIndex) => {
+    const spines = new THREE.InstancedMesh(
+      spineGeometry,
+      materialIndex === 0 ? spineMaterial : spineHighlightMaterial,
+      transforms.length,
+    );
+    transforms.forEach((transform, spineIndex) => {
+      spineHelper.position.copy(transform.position).addScaledVector(transform.normal, 0.08);
+      spineHelper.quaternion.setFromUnitVectors(up, transform.normal);
+      spineHelper.scale.set(1, transform.lengthScale, 1);
+      spineHelper.updateMatrix();
+      spines.setMatrixAt(spineIndex, spineHelper.matrix);
+    });
+    spines.instanceMatrix.needsUpdate = true;
+    group.add(spines);
+  });
+
+  const legs = [];
+  for (const side of [-1, 1]) {
+    for (const z of [-0.22, 0.27]) {
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.22, 6), darkMaterial);
+      leg.position.set(side * 0.23, 0.1, z);
+      group.add(leg);
+      legs.push(leg);
+    }
+  }
+
+  const apple = createHedgehogApple();
+  apple.position.set(index % 2 === 0 ? -0.13 : 0.14, 0.98, -0.08);
+  apple.scale.setScalar(0.8 + (index % 2) * 0.12);
+  group.add(apple);
+
+  const mushroom = createHedgehogMushroom(index);
+  mushroom.position.set(index % 2 === 0 ? 0.18 : -0.16, 0.98, -0.27);
+  mushroom.rotation.z = index % 2 === 0 ? 0.14 : -0.16;
+  group.add(mushroom);
+
+  group.scale.setScalar(0.94 + (index % 3) * 0.07);
+  return { group, legs, route: null, phase: 0 };
+}
+
+function createHedgehogApple() {
+  const group = new THREE.Group();
+  const apple = new THREE.Mesh(
+    new THREE.SphereGeometry(0.13, 10, 8),
+    new THREE.MeshStandardMaterial({ color: 0xc83f3b, roughness: 0.58 }),
+  );
+  apple.scale.set(1, 0.9, 1);
+  group.add(apple);
+  const stem = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.012, 0.016, 0.12, 5),
+    new THREE.MeshStandardMaterial({ color: 0x4b3423, roughness: 0.9 }),
+  );
+  stem.position.y = 0.14;
+  stem.rotation.z = 0.22;
+  group.add(stem);
+  const leaf = new THREE.Mesh(
+    new THREE.CircleGeometry(0.055, 7),
+    new THREE.MeshBasicMaterial({ color: 0x4e8d4e, side: THREE.DoubleSide, toneMapped: false }),
+  );
+  leaf.position.set(0.045, 0.15, 0);
+  leaf.scale.set(1.35, 0.55, 1);
+  leaf.rotation.z = 0.42;
+  group.add(leaf);
+  return group;
+}
+
+function createHedgehogMushroom(index) {
+  const group = new THREE.Group();
+  const stem = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.035, 0.05, 0.2, 7),
+    new THREE.MeshStandardMaterial({ color: 0xe8dec5, roughness: 0.9 }),
+  );
+  stem.position.y = 0.08;
+  group.add(stem);
+  const cap = new THREE.Mesh(
+    new THREE.SphereGeometry(0.12, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2),
+    new THREE.MeshStandardMaterial({ color: index % 2 === 0 ? 0xb84943 : 0xd68b43, roughness: 0.72 }),
+  );
+  cap.scale.set(1.25, 0.7, 1.25);
+  cap.position.y = 0.19;
+  group.add(cap);
+  return group;
+}
+
+function createGraveyardExitGate() {
+  const group = new THREE.Group();
+  group.position.set(0, 0, GRAVEYARD_TO_FINALE_BOUNDARY_Z + 0.76);
+  const ironMaterial = new THREE.MeshStandardMaterial({
+    color: 0x171a1d,
+    roughness: 0.38,
+    metalness: 0.78,
+  });
+  const accentMaterial = new THREE.MeshStandardMaterial({
+    color: 0x6f6758,
+    emissive: 0x221b13,
+    emissiveIntensity: 0.18,
+    roughness: 0.5,
+    metalness: 0.55,
+  });
+  const panelWidth = DOOR_HALF_WIDTH;
+
+  const createPanel = (side) => {
+    const panel = new THREE.Group();
+    const edge = side * panelWidth / 2;
+    const barCount = 7;
+    for (let barIndex = 0; barIndex < barCount; barIndex += 1) {
+      const x = -panelWidth / 2 + 0.22 + barIndex * ((panelWidth - 0.44) / (barCount - 1));
+      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 4.15, 7), ironMaterial);
+      bar.position.set(x, 2.15, 0);
+      panel.add(bar);
+      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.32, 7), accentMaterial);
+      spike.position.set(x, 4.38, 0);
+      panel.add(spike);
+    }
+    for (const y of [0.5, 2.15, 3.8]) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(panelWidth, 0.09, 0.12), ironMaterial);
+      rail.position.set(0, y, 0);
+      panel.add(rail);
+    }
+    const diagonal = new THREE.Mesh(new THREE.BoxGeometry(panelWidth * 1.08, 0.09, 0.1), accentMaterial);
+    diagonal.position.set(0, 2.15, 0.02);
+    diagonal.rotation.z = side * 0.52;
+    panel.add(diagonal);
+    panel.position.x = edge;
+    panel.userData.closedX = edge;
+    return panel;
+  };
+
+  const leftGate = createPanel(-1);
+  const rightGate = createPanel(1);
+  group.add(leftGate, rightGate);
+  graveyardPuzzle.leftGate = leftGate;
+  graveyardPuzzle.rightGate = rightGate;
+  return group;
 }
 
 function buildSixthRoomFinale() {
@@ -6688,6 +7706,9 @@ function animate() {
     updateThirdRoomPuzzle(delta, elapsed);
     updateFourthRoomPuzzle(delta, elapsed);
     updateFifthRoomPuzzle(delta, elapsed);
+    if (GRAVEYARD_VARIANT) {
+      updateGraveyardPuzzle(delta, elapsed);
+    }
     updateSixthRoomFinale(delta, elapsed);
   }
 
@@ -7119,6 +8140,157 @@ function updateFifthRoomDoor(delta) {
   fifthRoomPuzzle.rightDoor.position.x = fifthRoomPuzzle.rightDoor.userData.closedX + slideDistance * eased;
 }
 
+function updateGraveyardPuzzle(delta, elapsed) {
+  const targetGrave = getGraveyardTargetGrave();
+
+  graveyardPuzzle.graves.forEach((grave) => {
+    const targetGlow = targetGrave === grave && !grave.watered ? 1 : 0;
+    if (grave.watered || grave.cleaning) {
+      grave.cleanProgress = Math.min(1, grave.cleanProgress + delta * 0.72);
+    }
+
+    const clean = easeOutCubic(grave.cleanProgress);
+    grave.stoneMaterials.forEach((material, materialIndex) => {
+      const dirtyColor = material.userData.dirtyColor;
+      const cleanColor = material.userData.cleanColor;
+      if (dirtyColor && cleanColor) {
+        material.color.copy(dirtyColor).lerp(cleanColor, clean);
+      }
+      material.roughness = THREE.MathUtils.lerp(0.96, 0.62, clean);
+      material.emissiveIntensity = 0.04 + clean * 0.08 + targetGlow * (0.08 + materialIndex * 0.015);
+    });
+
+    grave.mossPatches.forEach((patch) => {
+      patch.material.opacity = Math.max(0, 0.88 * (1 - clean * 1.18));
+      patch.visible = patch.material.opacity > 0.02;
+    });
+
+    const bloom = easeOutCubic(THREE.MathUtils.clamp((grave.cleanProgress - 0.16) / 0.84, 0, 1));
+    grave.flowers.visible = bloom > 0.01;
+    grave.flowers.scale.setScalar(Math.max(0.01, bloom));
+    grave.flowers.rotation.y = Math.sin(elapsed * 0.9 + grave.phase) * 0.08 * bloom;
+    grave.flowers.position.y = 0.12 + Math.sin(elapsed * 1.6 + grave.phase) * 0.015 * bloom;
+
+    if (grave.cleanProgress >= 1) {
+      grave.cleaning = false;
+    }
+  });
+
+  updateGraveyardParticles(delta, elapsed);
+  updateGraveyardHedgehogs(elapsed);
+  updateGraveyardSunlight(delta, elapsed);
+  updateGraveyardWateringCan(delta);
+  updateGraveyardGate(delta);
+}
+
+function updateGraveyardHedgehogs(elapsed) {
+  graveyardPuzzle.hedgehogs.forEach((hedgehog, index) => {
+    const route = hedgehog.route;
+    const angle = elapsed * route.speed + hedgehog.phase;
+    const x = route.centerX + Math.cos(angle) * route.radiusX;
+    const localZ = route.centerZ + Math.sin(angle) * route.radiusZ;
+    const dx = -Math.sin(angle) * route.radiusX * route.speed;
+    const dz = Math.cos(angle) * route.radiusZ * route.speed;
+    hedgehog.group.position.set(
+      x,
+      0.24 + Math.abs(Math.sin(elapsed * 8.5 + index)) * 0.035,
+      GRAVEYARD_ROOM_CENTER_Z + localZ,
+    );
+    hedgehog.group.rotation.y = Math.atan2(dx, dz);
+    hedgehog.group.rotation.z = Math.sin(elapsed * 5.5 + index) * 0.025;
+    hedgehog.legs.forEach((leg, legIndex) => {
+      leg.rotation.x = Math.sin(elapsed * 10 + legIndex * Math.PI) * 0.42;
+    });
+  });
+}
+
+function updateGraveyardSunlight(delta, elapsed) {
+  const targetProgress = graveyardPuzzle.completed ? 1 : 0;
+  graveyardPuzzle.lightingProgress = THREE.MathUtils.damp(
+    graveyardPuzzle.lightingProgress,
+    targetProgress,
+    targetProgress > 0 ? 1.25 : 2.4,
+    delta,
+  );
+  const lightProgress = easeOutCubic(graveyardPuzzle.lightingProgress);
+  graveyardPuzzle.sunLights.forEach((light, index) => {
+    const pulse = 1 + Math.sin(elapsed * 1.15 + index * 1.8) * 0.045;
+    light.intensity = light.userData.targetIntensity * lightProgress * pulse;
+  });
+  graveyardPuzzle.sunBeams.forEach((beam, index) => {
+    beam.material.opacity = lightProgress * (0.045 + Math.sin(elapsed * 0.85 + beam.userData.phase) * 0.008);
+    beam.rotation.y = Math.sin(elapsed * 0.16 + index) * 0.08;
+    beam.visible = beam.material.opacity > 0.004;
+  });
+}
+
+function updateGraveyardParticles(delta, elapsed) {
+  for (let i = graveyardPuzzle.particles.length - 1; i >= 0; i -= 1) {
+    const particle = graveyardPuzzle.particles[i];
+    particle.age += delta;
+    particle.mesh.position.addScaledVector(particle.velocity, delta);
+    particle.mesh.position.x += Math.sin(elapsed * 2.4 + particle.phase) * delta * 0.12;
+    particle.mesh.rotation.y += particle.spin * delta;
+    const progress = particle.age / particle.lifetime;
+    if (particle.mesh.material?.transparent) {
+      particle.mesh.material.opacity = Math.max(0, particle.baseOpacity * (1 - progress));
+    }
+    if (particle.age >= particle.lifetime) {
+      scene.remove(particle.mesh);
+      graveyardPuzzle.particles.splice(i, 1);
+    }
+  }
+}
+
+function updateGraveyardWateringCan(delta) {
+  const tool = graveyardPuzzle.wateringCan;
+  if (!tool) {
+    return;
+  }
+
+  graveyardPuzzle.wateringTimer = Math.max(0, graveyardPuzzle.wateringTimer - delta);
+  if (graveyardPuzzle.wateringTimer <= 0 || !isPlayerInGraveyardRoom()) {
+    tool.visible = false;
+    return;
+  }
+
+  const progress = 1 - graveyardPuzzle.wateringTimer / GRAVEYARD_WATER_ANIMATION_DURATION;
+  const pour = Math.sin(THREE.MathUtils.clamp(progress, 0, 1) * Math.PI);
+  const forward = getPlayerForwardVector();
+  const right = new THREE.Vector3(-forward.z, 0, forward.x);
+  tool.visible = true;
+  tool.position.copy(player.position)
+    .addScaledVector(right, 0.86)
+    .addScaledVector(forward, 0.9 + pour * 0.38);
+  tool.position.y = player.position.y + 1.08 + pour * 0.06;
+  tool.rotation.set(-0.18 - pour * 0.58, player.rotation.y + 1.08, -0.38 - pour * 0.3);
+
+  tool.children.forEach((child) => {
+    if (child.userData.base) {
+      child.position.copy(child.userData.base);
+      child.position.x += pour * THREE.MathUtils.randFloat(0.04, 0.12);
+      child.position.y -= pour * THREE.MathUtils.randFloat(0.02, 0.18);
+      child.visible = pour > 0.08;
+    }
+  });
+}
+
+function updateGraveyardGate(delta) {
+  if (!graveyardPuzzle.leftGate || !graveyardPuzzle.rightGate) {
+    return;
+  }
+  if (graveyardPuzzle.completed && !graveyardPuzzle.opened) {
+    graveyardPuzzle.opened = true;
+  }
+  if (graveyardPuzzle.opened) {
+    graveyardPuzzle.opening = Math.min(1, graveyardPuzzle.opening + delta * 0.7);
+  }
+  const eased = easeOutCubic(graveyardPuzzle.opening);
+  const slideDistance = DOOR_HALF_WIDTH + 1.15;
+  graveyardPuzzle.leftGate.position.x = graveyardPuzzle.leftGate.userData.closedX - slideDistance * eased;
+  graveyardPuzzle.rightGate.position.x = graveyardPuzzle.rightGate.userData.closedX + slideDistance * eased;
+}
+
 function updateSixthRoomFinale(delta, elapsed) {
   updateSixthRoomSeaside(elapsed);
 
@@ -7492,6 +8664,10 @@ function kickFootball() {
 }
 
 function handlePrimaryAction() {
+  if (GRAVEYARD_VARIANT && isPlayerInGraveyardRoom() && waterGraveyardGrave()) {
+    return true;
+  }
+
   if (isPlayerInFifthRoom() && waterFifthRoomPlant()) {
     return true;
   }
@@ -7565,6 +8741,123 @@ function getFifthRoomTargetPlant() {
   });
 
   return best;
+}
+
+function waterGraveyardGrave() {
+  if (!GRAVEYARD_VARIANT || !isPlayerInGraveyardRoom() || graveyardPuzzle.completed) {
+    return false;
+  }
+
+  const grave = getGraveyardTargetGrave();
+  graveyardPuzzle.wateringTimer = GRAVEYARD_WATER_ANIMATION_DURATION;
+  graveyardPuzzle.wateringTarget = grave;
+  if (!grave || grave.watered || grave.cleaning) {
+    return Boolean(grave);
+  }
+
+  grave.watered = true;
+  grave.cleaning = true;
+  grave.cleanProgress = Math.max(grave.cleanProgress, 0.035);
+  graveyardPuzzle.wateredCount += 1;
+  spawnGraveyardCleaningEffects(grave);
+  playWateringSound();
+
+  if (graveyardPuzzle.wateredCount >= graveyardPuzzle.graves.length) {
+    completeGraveyardPuzzle();
+  }
+  return true;
+}
+
+function getGraveyardTargetGrave() {
+  if (!GRAVEYARD_VARIANT || !isPlayerInGraveyardRoom()) {
+    return null;
+  }
+
+  const forward = getPlayerForwardVector();
+  let best = null;
+  let bestScore = Infinity;
+  graveyardPuzzle.graves.forEach((grave) => {
+    if (grave.watered || grave.cleaning) {
+      return;
+    }
+    const dx = grave.group.position.x - player.position.x;
+    const dz = grave.group.position.z - player.position.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance > GRAVEYARD_WATER_RANGE) {
+      return;
+    }
+    const directionDot = distance > 0.001
+      ? (dx * forward.x + dz * forward.z) / distance
+      : 1;
+    if (directionDot < -0.16 && distance > 1.25) {
+      return;
+    }
+    const score = distance - directionDot * 0.78;
+    if (score < bestScore) {
+      bestScore = score;
+      best = grave;
+    }
+  });
+  return best;
+}
+
+function spawnGraveyardCleaningEffects(grave) {
+  const count = PERFORMANCE_MODE ? 10 : 18;
+  const maxParticles = PERFORMANCE_MODE ? 70 : 120;
+  while (graveyardPuzzle.particles.length > maxParticles - count) {
+    const oldest = graveyardPuzzle.particles.shift();
+    if (oldest) scene.remove(oldest.mesh);
+  }
+
+  for (let i = 0; i < count; i += 1) {
+    const isWater = i % 3 !== 0;
+    const material = new THREE.MeshBasicMaterial({
+      color: isWater ? 0x8fe9ff : grave.flowerColor,
+      transparent: true,
+      opacity: isWater ? 0.68 : 0.86,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    const mesh = new THREE.Mesh(
+      isWater
+        ? new THREE.SphereGeometry(0.035 + (i % 2) * 0.018, 7, 5)
+        : new THREE.CircleGeometry(0.055 + (i % 3) * 0.014, 8),
+      material,
+    );
+    mesh.position.copy(grave.group.position).add(new THREE.Vector3(
+      THREE.MathUtils.randFloatSpread(0.72),
+      THREE.MathUtils.randFloat(0.55, 1.75),
+      THREE.MathUtils.randFloatSpread(0.45) - 0.42,
+    ));
+    scene.add(mesh);
+    graveyardPuzzle.particles.push({
+      mesh,
+      velocity: new THREE.Vector3(
+        THREE.MathUtils.randFloatSpread(0.55),
+        THREE.MathUtils.randFloat(0.18, 0.85),
+        THREE.MathUtils.randFloatSpread(0.45),
+      ),
+      spin: THREE.MathUtils.randFloat(-2.2, 2.2),
+      phase: Math.random() * Math.PI * 2,
+      age: 0,
+      lifetime: THREE.MathUtils.randFloat(1.25, 2.2),
+      baseOpacity: material.opacity,
+    });
+  }
+}
+
+function completeGraveyardPuzzle() {
+  if (!GRAVEYARD_VARIANT || graveyardPuzzle.completed) {
+    return;
+  }
+  graveyardPuzzle.completed = true;
+  graveyardPuzzle.wateredCount = graveyardPuzzle.graves.length;
+  graveyardPuzzle.graves.forEach((grave) => {
+    grave.watered = true;
+    grave.cleaning = true;
+    grave.cleanProgress = Math.max(grave.cleanProgress, 0.12);
+  });
+  playRoomEntryInstructionSound(GRAVEYARD_ROOM_INDEX);
 }
 
 function spawnFifthRoomBloomEffects(plant) {
@@ -8037,6 +9330,12 @@ function isPlayerInFifthRoom() {
   return isPositionInFifthRoom(player.position.z);
 }
 
+function isPlayerInGraveyardRoom() {
+  return GRAVEYARD_VARIANT
+    && player.position.z <= getRoomFrontZ(GRAVEYARD_ROOM_INDEX)
+    && player.position.z >= getRoomBackZ(GRAVEYARD_ROOM_INDEX);
+}
+
 function isPlayerInSixthRoom() {
   return player.position.z <= getRoomFrontZ(SIXTH_ROOM_INDEX)
     && player.position.z >= getRoomBackZ(SIXTH_ROOM_INDEX);
@@ -8279,6 +9578,11 @@ function constrainToRooms(proposed, previous) {
       continue;
     }
 
+    if ((crossedForward || crossedBackward) && isGraveyardExitBoundary(lineZ) && !graveyardPuzzle.opened) {
+      proposed.z = previous.z;
+      continue;
+    }
+
     if ((crossedForward || crossedBackward) && Math.abs(proposed.x) > DOOR_HALF_WIDTH - PLAYER_RADIUS) {
       proposed.z = previous.z;
     }
@@ -8345,6 +9649,10 @@ function isFourthRoomBubbleBoundary(lineZ) {
 
 function isFifthRoomPlantBoundary(lineZ) {
   return Math.abs(lineZ - FIFTH_TO_SIXTH_BOUNDARY_Z) < 0.001;
+}
+
+function isGraveyardExitBoundary(lineZ) {
+  return GRAVEYARD_VARIANT && Math.abs(lineZ - GRAVEYARD_TO_FINALE_BOUNDARY_Z) < 0.001;
 }
 
 function updateCamera(delta) {
@@ -8719,6 +10027,25 @@ function resetStick(event) {
   }
   input.joystick.set(0, 0);
   moveKnob.style.transform = "translate(-50%, -50%)";
+}
+
+function onActionButtonPointerDown(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  if (!gameStarted) {
+    return;
+  }
+  unlockMelodyAudio();
+  actionButton?.classList.add("is-pressed");
+  actionButton?.setPointerCapture?.(event.pointerId);
+  handlePrimaryAction();
+}
+
+function onActionButtonPointerUp(event) {
+  actionButton?.classList.remove("is-pressed");
+  if (actionButton?.hasPointerCapture?.(event.pointerId)) {
+    actionButton.releasePointerCapture(event.pointerId);
+  }
 }
 
 function rotateCamera(deltaX, deltaY) {
