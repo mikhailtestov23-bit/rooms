@@ -1,4 +1,4 @@
-import "./styles.css?v=graveyard-mobile-1";
+import "./styles.css?v=graveyard-wall-fade-3";
 import * as THREE from "three";
 import photoGateImageUrl from "./assets/marfa-beach-goal.jpg";
 import thirdRoomWallImageUrl from "./assets/marfa-sleeping-room.jpg";
@@ -814,6 +814,7 @@ function buildRooms() {
   const corridorMaterials = createCorridorMaterials();
 
   for (let i = 0; i < ROOM_COUNT; i += 1) {
+    const cameraFadeStartIndex = cameraFadeMeshes.length;
     const z = getRoomCenterZ(i);
     const room = new THREE.Group();
     room.position.z = z;
@@ -896,6 +897,12 @@ function buildRooms() {
         roomLights.push(light);
         scene.add(light);
       }
+    }
+
+    if (isGraveyardRoom) {
+      cameraFadeMeshes.slice(cameraFadeStartIndex).forEach((mesh) => {
+        mesh.userData.graveyardCameraFade = true;
+      });
     }
 
     const sparkles = createSparkles(z, i);
@@ -1533,10 +1540,14 @@ function markCameraFadeMesh(mesh, fadedOpacity = 0.16) {
   }
 
   const material = mesh.material.clone();
+  const baseOpacity = Number.isFinite(material.opacity) ? material.opacity : 1;
+  const baseDepthWrite = material.depthWrite;
   material.transparent = true;
-  material.opacity = 1;
-  material.depthWrite = true;
+  material.opacity = baseOpacity;
+  material.depthWrite = baseDepthWrite;
   mesh.material = material;
+  mesh.userData.cameraFadeBaseOpacity = baseOpacity;
+  mesh.userData.cameraFadeBaseDepthWrite = baseDepthWrite;
   mesh.userData.cameraFadeOpacity = fadedOpacity;
   cameraFadeMeshes.push(mesh);
   return mesh;
@@ -1667,6 +1678,8 @@ function addBoundaryWall(room, localZ, closed, wallMaterial, trimMaterial) {
 
   const rightColumn = leftColumn.clone();
   rightColumn.position.x = DOOR_HALF_WIDTH + 0.32;
+  markCameraFadeMesh(leftColumn, 0.12);
+  markCameraFadeMesh(rightColumn, 0.12);
   room.add(rightColumn);
 
   const ring = new THREE.Mesh(
@@ -2249,6 +2262,7 @@ function addGraveyardIvyCarpet(room) {
         instances.setMatrixAt(index, helper.matrix);
       });
       instances.instanceMatrix.needsUpdate = true;
+      markCameraFadeMesh(instances, geometry === leafGeometry ? 0.015 : 0.025);
       room.add(instances);
     });
   };
@@ -2344,6 +2358,7 @@ function addGraveyardWallOvergrowth(room) {
       new THREE.TubeGeometry(curve, PERFORMANCE_MODE ? 5 : 8, 0.026, 5, false),
       vineMaterial,
     );
+    markCameraFadeMesh(vine, 0.025);
     room.add(vine);
 
     for (let leafIndex = 0; leafIndex < 7; leafIndex += 1) {
@@ -2373,6 +2388,7 @@ function addGraveyardWallOvergrowth(room) {
       leaves.setMatrixAt(index, transformHelper.matrix);
     });
     leaves.instanceMatrix.needsUpdate = true;
+    markCameraFadeMesh(leaves, 0.015);
     room.add(leaves);
   });
 
@@ -2397,6 +2413,7 @@ function addGraveyardWallOvergrowth(room) {
       );
       branch.rotation.set(THREE.MathUtils.randFloat(-1.2, 1.2), THREE.MathUtils.randFloat(-0.5, 0.5), Math.PI / 2);
     }
+    markCameraFadeMesh(branch, 0.025);
     room.add(branch);
   }
 }
@@ -2417,14 +2434,17 @@ function addGraveyardIronFence(room) {
       const z = -ROOM_LENGTH / 2 + 1.05 + i * ((ROOM_LENGTH - 2.1) / 18);
       const post = new THREE.Mesh(postGeometry, ironMaterial);
       post.position.set(x, 1.02, z);
+      markCameraFadeMesh(post, 0.04);
       room.add(post);
       const spike = new THREE.Mesh(spikeGeometry, ironMaterial);
       spike.position.set(x, 1.98, z);
+      markCameraFadeMesh(spike, 0.04);
       room.add(spike);
     }
     for (const y of [0.72, 1.48]) {
       const rail = new THREE.Mesh(railGeometry, ironMaterial);
       rail.position.set(x, y, 0);
+      markCameraFadeMesh(rail, 0.04);
       room.add(rail);
     }
   }
@@ -9527,11 +9547,10 @@ function getDriveInput() {
   const keyboardMove = (input.forward ? 1 : 0) - (input.backward ? 1 : 0);
   const keyboardTurn = (input.right ? 1 : 0) - (input.left ? 1 : 0);
   const stickMove = Math.abs(input.joystick.y) > 0.08 ? input.joystick.y : 0;
-  const stickTurn = Math.abs(input.joystick.x) > 0.08 ? input.joystick.x : 0;
 
   return {
     move: THREE.MathUtils.clamp(stickMove || keyboardMove, -1, 1),
-    turn: THREE.MathUtils.clamp(stickTurn || keyboardTurn, -1, 1),
+    turn: THREE.MathUtils.clamp(keyboardTurn, -1, 1),
   };
 }
 
@@ -9697,11 +9716,21 @@ function updateCameraFadeMeshes(delta) {
   }
 
   const blend = 1 - Math.pow(0.001, delta);
+  const graveyardCameraOutside = GRAVEYARD_VARIANT && (
+    Math.abs(camera.position.x) > ROOM_WIDTH / 2 - WALL_THICKNESS * 0.35
+    || camera.position.z > getRoomFrontZ(GRAVEYARD_ROOM_INDEX) - WALL_THICKNESS * 0.35
+    || camera.position.z < getRoomBackZ(GRAVEYARD_ROOM_INDEX) + WALL_THICKNESS * 0.35
+  );
 
   cameraFadeMeshes.forEach((mesh) => {
-    const targetOpacity = cameraFadeTargets.has(mesh) ? mesh.userData.cameraFadeOpacity : 1;
+    const forceGraveyardFade = graveyardCameraOutside && mesh.userData.graveyardCameraFade;
+    const targetOpacity = forceGraveyardFade
+      ? 0
+      : (cameraFadeTargets.has(mesh)
+        ? mesh.userData.cameraFadeOpacity
+        : mesh.userData.cameraFadeBaseOpacity);
     mesh.material.opacity = THREE.MathUtils.lerp(mesh.material.opacity, targetOpacity, blend);
-    mesh.material.depthWrite = mesh.material.opacity > 0.42;
+    mesh.material.depthWrite = mesh.userData.cameraFadeBaseDepthWrite && mesh.material.opacity > 0.42;
     mesh.visible = mesh.material.opacity > 0.035;
   });
 }
@@ -9965,10 +9994,11 @@ function onScenePointerDown(event) {
     return;
   }
 
-  if (event.target !== renderer.domElement || event.pointerType === "touch") {
+  if (event.target !== renderer.domElement || cameraState.draggingPointer !== null) {
     return;
   }
 
+  event.preventDefault();
   unlockMelodyAudio();
   cameraState.draggingPointer = event.pointerId;
   cameraState.lastX = event.clientX;
@@ -9981,6 +10011,7 @@ function onScenePointerMove(event) {
     return;
   }
 
+  event.preventDefault();
   rotateCamera(event.clientX - cameraState.lastX, event.clientY - cameraState.lastY);
   cameraState.lastX = event.clientX;
   cameraState.lastY = event.clientY;
@@ -9989,7 +10020,9 @@ function onScenePointerMove(event) {
 function onScenePointerUp(event) {
   if (cameraState.draggingPointer === event.pointerId) {
     cameraState.draggingPointer = null;
-    renderer.domElement.releasePointerCapture(event.pointerId);
+    if (renderer.domElement.hasPointerCapture(event.pointerId)) {
+      renderer.domElement.releasePointerCapture(event.pointerId);
+    }
   }
 }
 
@@ -10014,11 +10047,11 @@ function updateStick(event) {
   const center = new THREE.Vector2(rect.left + rect.width / 2, rect.top + rect.height / 2);
   const pointer = new THREE.Vector2(event.clientX, event.clientY);
   const delta = pointer.sub(center);
-  const radius = rect.width * 0.36;
+  const radius = rect.height * 0.34;
+  const verticalOffset = THREE.MathUtils.clamp(delta.y, -radius, radius);
 
-  delta.clampLength(0, radius);
-  input.joystick.set(delta.x / radius, -delta.y / radius);
-  moveKnob.style.transform = `translate(calc(-50% + ${delta.x}px), calc(-50% + ${delta.y}px))`;
+  input.joystick.set(0, -verticalOffset / radius);
+  moveKnob.style.transform = `translate(-50%, calc(-50% + ${verticalOffset}px))`;
 }
 
 function resetStick(event) {
